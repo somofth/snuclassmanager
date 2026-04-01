@@ -6,7 +6,7 @@ import threading
 
 import uvicorn
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import TELEGRAM_API_HASH, TELEGRAM_API_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,11 +63,26 @@ def main():
             "등록 후 프로그램을 재시작하면 알림이 활성화됩니다."
         )
 
-    # 5. 봇 실행 (polling)
-    logger.info("수업비서 봇을 시작합니다...")
-    import asyncio
-    asyncio.set_event_loop(asyncio.new_event_loop())
-    app.run_polling()
+    # 5. Telethon 대용량 파일 다운로더 초기화
+    if TELEGRAM_API_ID and TELEGRAM_API_HASH:
+        import asyncio
+        from downloader import init_downloader
+
+        async def _init_and_poll():
+            await init_downloader(TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_BOT_TOKEN)
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling()
+            await app.updater.idle()
+            await app.stop()
+            await app.shutdown()
+
+        asyncio.run(_init_and_poll())
+    else:
+        logger.warning("TELEGRAM_API_ID/HASH 미설정 — 20MB 초과 파일은 처리 불가")
+        import asyncio
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        app.run_polling()
 
 
 if __name__ == "__main__":

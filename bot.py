@@ -223,6 +223,35 @@ def _session_keyboard():
     return InlineKeyboardMarkup(buttons)
 
 
+async def _download_audio(message, audio) -> tuple[str, str]:
+    """오디오 파일 다운로드. (file_path, file_name) 반환."""
+    import downloader
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    file_name = getattr(audio, "file_name", None) or f"recording_{audio.file_id}"
+    file_size = getattr(audio, "file_size", None)
+
+    if file_size and file_size > 20 * 1024 * 1024:
+        # 20MB 초과 → Telethon으로 다운로드
+        if not downloader.is_available():
+            raise RuntimeError(
+                "대용량 파일 다운로더가 설정되지 않았습니다.\n"
+                ".env에 TELEGRAM_API_ID와 TELEGRAM_API_HASH를 추가해 주세요."
+            )
+        saved_path = await downloader.download_file(
+            chat_id=message.chat_id,
+            message_id=message.message_id,
+            dest_dir=UPLOAD_DIR,
+        )
+        file_name = os.path.basename(saved_path)
+        return saved_path, file_name
+    else:
+        file = await message.get_bot().get_file(audio.file_id)
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        await file.download_to_drive(file_path)
+        return file_path, file_name
+
+
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """음성/오디오 파일 수신"""
     message = update.message
@@ -231,26 +260,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not audio:
         return
 
-    # 텔레그램 봇 API 파일 다운로드 제한: 20MB
-    file_size = getattr(audio, "file_size", None)
-    if file_size and file_size > 20 * 1024 * 1024:
-        await message.reply_text(
-            "⚠️ 파일이 너무 큽니다 (20MB 초과).\n\n"
-            "아이폰 음성 메모 앱에서 녹음 후 파일로 내보내기 하면 용량이 줄어듭니다.\n"
-            "또는 녹음을 여러 개로 나눠서 보내주세요."
-        )
-        return
-
     try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file = await context.bot.get_file(audio.file_id)
-        file_name = getattr(audio, "file_name", None) or f"recording_{audio.file_id}.oga"
-        file_path = os.path.join(UPLOAD_DIR, file_name)
-        await file.download_to_drive(file_path)
-
+        file_path, file_name = await _download_audio(message, audio)
         chat_id = update.effective_chat.id
         pending_files[chat_id] = {"file_path": file_path, "type": "audio", "file_name": file_name}
-
         await message.reply_text("🎙️ 녹음 파일을 받았습니다. 어떤 과목인가요?", reply_markup=_subject_keyboard())
     except Exception as e:
         logger.exception("오디오 파일 처리 중 오류")
@@ -271,18 +284,17 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("녹음 파일(음성) 또는 PDF 파일만 처리할 수 있습니다.")
         return
 
-    if doc.file_size and doc.file_size > 20 * 1024 * 1024:
-        await update.message.reply_text(
-            "⚠️ 파일이 너무 큽니다 (20MB 초과).\n"
-            "녹음을 여러 개로 나눠서 보내주세요."
-        )
-        return
-
     try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file = await context.bot.get_file(doc.file_id)
-        file_path = os.path.join(UPLOAD_DIR, file_name)
-        await file.download_to_drive(file_path)
+        if is_audio:
+            file_path, file_name = await _download_audio(update.message, doc)
+        else:
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            if doc.file_size and doc.file_size > 20 * 1024 * 1024:
+                await update.message.reply_text("⚠️ PDF 파일이 20MB를 초과합니다. 더 작은 파일을 보내주세요.")
+                return
+            file = await context.bot.get_file(doc.file_id)
+            file_path = os.path.join(UPLOAD_DIR, file_name)
+            await file.download_to_drive(file_path)
 
         chat_id = update.effective_chat.id
         file_type = "pdf" if is_pdf else "audio"
