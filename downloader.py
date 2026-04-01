@@ -19,8 +19,10 @@ async def init_downloader(api_id: int, api_hash: str, bot_token: str):
     @_client.on(events.NewMessage)
     async def cache_message(event):
         """미디어가 있는 메시지를 캐싱"""
+        logger.info(f"[Telethon] 메시지 수신: chat_id={event.chat_id}, msg_id={event.message.id}, media={bool(event.message.media)}")
         if event.message.media:
             _message_cache[(event.chat_id, event.message.id)] = event.message
+            logger.info(f"[Telethon] 메시지 캐시 완료: {(event.chat_id, event.message.id)}")
 
     logger.info("대용량 파일 다운로더 초기화 완료 (Telethon)")
 
