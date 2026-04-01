@@ -27,13 +27,22 @@ async def init_downloader(api_id: int, api_hash: str, bot_token: str):
 
 async def download_file(chat_id: int, message_id: int, dest_dir: str) -> str:
     """캐싱된 Telethon 메시지에서 파일 다운로드. 저장된 파일 경로 반환."""
+    import asyncio
+
     if _client is None:
         raise RuntimeError("대용량 파일 다운로더가 설정되지 않았습니다.\n.env에 TELEGRAM_API_ID와 TELEGRAM_API_HASH를 추가해 주세요.")
 
-    msg = _message_cache.pop((chat_id, message_id), None)
-    if msg is None:
+    # Telethon의 NewMessage 이벤트가 PTB보다 늦게 도착할 수 있으므로 최대 5초 대기
+    key = (chat_id, message_id)
+    for _ in range(50):
+        msg = _message_cache.get(key)
+        if msg is not None:
+            break
+        await asyncio.sleep(0.1)
+    else:
         raise RuntimeError("파일을 캐시에서 찾을 수 없습니다. 파일을 다시 보내주세요.")
 
+    _message_cache.pop(key, None)
     saved_path = await _client.download_media(msg.media, dest_dir)
     return saved_path
 
