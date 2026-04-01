@@ -387,9 +387,12 @@ async def handle_session_selection(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_message(chat_id=chat_id, text=f"❌ 처리 중 오류가 발생했습니다: {e}")
 
 
-def create_bot_app():
+def create_bot_app(post_init=None):
     """텔레그램 봇 Application 생성"""
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    builder = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN)
+    if post_init:
+        builder = builder.post_init(post_init)
+    app = builder.build()
 
     # 명령어 핸들러
     app.add_handler(CommandHandler("start", cmd_start))
@@ -405,5 +408,6 @@ def create_bot_app():
 
     # 인라인 버튼 핸들러
     app.add_handler(CallbackQueryHandler(handle_subject_selection, pattern=r"^subject_"))
+    app.add_handler(CallbackQueryHandler(handle_session_selection, pattern=r"^session_"))
 
     return app

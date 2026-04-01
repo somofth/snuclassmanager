@@ -43,46 +43,38 @@ def main():
         web_thread.join()
         return
 
+    # 4. post_init 콜백 준비 (Telethon + 스케줄러)
+    async def on_startup(app):
+        # Telethon 대용량 다운로더
+        if TELEGRAM_API_ID and TELEGRAM_API_HASH:
+            from downloader import init_downloader
+            await init_downloader(TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_BOT_TOKEN)
+            logger.info("대용량 파일 다운로더 초기화 완료")
+        else:
+            logger.warning("TELEGRAM_API_ID/HASH 미설정 — 20MB 초과 파일 처리 불가")
+
+        # 스케줄러
+        chat_id = TELEGRAM_CHAT_ID
+        if chat_id:
+            from scheduler import setup_scheduler
+            scheduler = setup_scheduler(app.bot, chat_id)
+            scheduler.start()
+            logger.info(f"스케줄러 시작 (chat_id: {chat_id})")
+        else:
+            logger.warning(
+                "TELEGRAM_CHAT_ID가 설정되지 않았습니다. "
+                "봇에 /start 명령을 보내면 자동으로 등록됩니다."
+            )
+
     from bot import create_bot_app
 
-    app = create_bot_app()
+    app = create_bot_app(post_init=on_startup)
     logger.info("텔레그램 봇 준비 완료")
 
-    # 4. 스케줄러 설정
-    chat_id = TELEGRAM_CHAT_ID
-    if chat_id:
-        from scheduler import setup_scheduler
-
-        scheduler = setup_scheduler(app.bot, chat_id)
-        scheduler.start()
-        logger.info(f"스케줄러 시작 (chat_id: {chat_id})")
-    else:
-        logger.warning(
-            "TELEGRAM_CHAT_ID가 설정되지 않았습니다. "
-            "봇에 /start 명령을 보내면 자동으로 등록됩니다. "
-            "등록 후 프로그램을 재시작하면 알림이 활성화됩니다."
-        )
-
-    # 5. Telethon 대용량 파일 다운로더 초기화
-    if TELEGRAM_API_ID and TELEGRAM_API_HASH:
-        import asyncio
-        from downloader import init_downloader
-
-        async def _init_and_poll():
-            await init_downloader(TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_BOT_TOKEN)
-            await app.initialize()
-            await app.start()
-            await app.updater.start_polling()
-            await app.updater.idle()
-            await app.stop()
-            await app.shutdown()
-
-        asyncio.run(_init_and_poll())
-    else:
-        logger.warning("TELEGRAM_API_ID/HASH 미설정 — 20MB 초과 파일은 처리 불가")
-        import asyncio
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        app.run_polling()
+    # 5. 봇 실행
+    import asyncio
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    app.run_polling()
 
 
 if __name__ == "__main__":
